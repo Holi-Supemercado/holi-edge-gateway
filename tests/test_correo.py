@@ -8,6 +8,7 @@ import pytest
 from app.clients.odoo_client import OdooClientError
 from app.clients.otp_provider import set_otp_provider
 from app.clients.reniec_client import set_reniec_client
+from app.core import canales_otp as canales_otp_module
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.main import app
@@ -59,6 +60,7 @@ def entorno(monkeypatch):
     monkeypatch.setattr(settings, "TWILIO_EMAIL_TEMPLATE_PASSWORD_RESET", PLANTILLA_RECUPERACION)
     cache = FakeRedis()
     monkeypatch.setattr(md_router, "get_cache_redis", lambda: cache)
+    monkeypatch.setattr(canales_otp_module, "get_cache_redis", lambda: cache)
     set_otp_provider(provider)
     set_reniec_client(FakeReniec())
 

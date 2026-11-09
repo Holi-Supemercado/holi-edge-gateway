@@ -66,7 +66,9 @@ class Settings(BaseSettings):
     RENIEC_TIMEOUT_SECONDS: float = 4.0
     RENIEC_CACHE_TTL_SECONDS: int = 86400  # Each lookup spends a credit
 
-    # Verification channels (RF-062). Add 'whatsapp' only once the Verify service
+    # Verification channels (RF-062). Odoo manages them (Settings → e-commerce,
+    # Redis key content:otp_channels); these two are the fallback when that key
+    # is missing or unreadable. Add 'whatsapp' only once the Verify service
     # has our own WhatsApp sender (WABA + Messaging Service): until then Twilio
     # answers 60223 "channel disabled". Sign-up only offers phone channels.
     OTP_CHANNELS_ENABLED: str = "sms,correo"

@@ -11,6 +11,7 @@ from ..clients.otp_provider import get_otp_provider
 from ..clients.redis_client import get_state_redis
 from ..clients.reniec_client import get_reniec_client
 from ..core.breaker import CircuitBreakerOpenError
+from ..core.canales_otp import CanalesOtp, leer_canales_otp
 from ..core.config import settings
 from ..core.errors import ApiError, desde_odoo
 from ..core.limits import check_rate_limit
@@ -87,28 +88,23 @@ def primer_nombre(nombre: str) -> str:
     return partes[0].capitalize() if partes else ""
 
 
-def _canales_para(proposito: str) -> List[str]:
+def _solo_telefono(proposito: str) -> bool:
     """
     Sign-up proves the phone, so only phone channels count there; the e-mail is
     verified on its own from the profile (ADR-017). A reset may use either.
     """
-    return settings.phone_otp_channels if proposito == PROPOSITO_REGISTRO else settings.otp_channels
+    return proposito == PROPOSITO_REGISTRO
 
 
-def _canal_sugerido(proposito: str) -> str:
-    disponibles = _canales_para(proposito)
-    return settings.OTP_CHANNEL_DEFAULT if settings.OTP_CHANNEL_DEFAULT in disponibles else (disponibles or [""])[0]
-
-
-def _canal_para(borrador: Dict[str, str], solicitado: Optional[str]) -> str:
+def _canal_para(borrador: Dict[str, str], solicitado: Optional[str], canales: CanalesOtp) -> str:
     """
     Resolves the verification channel (RF-062): what the client asked for, else
-    what the account prefers, else the default. Rejects anything not switched on
-    in this environment even if the contract declares it.
+    what the account prefers, else the suggested one. Rejects anything not
+    switched on (from Odoo, or the env as fallback) even if the contract declares it.
     """
-    proposito = borrador.get("proposito", PROPOSITO_REGISTRO)
-    disponibles = _canales_para(proposito)
-    canal = (solicitado or borrador.get("canal_preferido") or _canal_sugerido(proposito)).strip().lower()
+    solo_telefono = _solo_telefono(borrador.get("proposito", PROPOSITO_REGISTRO))
+    disponibles = canales.para(solo_telefono)
+    canal = (solicitado or borrador.get("canal_preferido") or canales.sugerido_para(solo_telefono)).strip().lower()
     if canal not in disponibles:
         opciones = ", ".join(disponibles)
         raise ApiError("canal-no-disponible", f"Canal de verificación no disponible. Opciones: {opciones}.")
@@ -272,6 +268,7 @@ async def registrar(payload: RegistroIn, request: Request):
     if not nombre_final:
         raise ApiError("nombres-requeridos")
 
+    canales = await leer_canales_otp()
     registro_id = str(uuid.uuid4())
     borrador = {
         "proposito": PROPOSITO_REGISTRO,
@@ -286,7 +283,7 @@ async def registrar(payload: RegistroIn, request: Request):
         "fecha_nacimiento": payload.fecha_nacimiento or "",
         "estado_validacion": estado_validacion,
         "telefono_verificado": "0",
-        "canal_preferido": _canal_sugerido(PROPOSITO_REGISTRO),
+        "canal_preferido": canales.sugerido_para(solo_telefono=True),
         "simulado": "0",
     }
 
@@ -305,8 +302,8 @@ async def registrar(payload: RegistroIn, request: Request):
         datos_desde_reniec=bool(nombre_reniec),
         estado_validacion=estado_validacion,
         motivo_validacion=motivo_validacion,
-        canales_disponibles=_canales_para(PROPOSITO_REGISTRO),
-        canal_sugerido=_canal_sugerido(PROPOSITO_REGISTRO),
+        canales_disponibles=canales.para(solo_telefono=True),
+        canal_sugerido=canales.sugerido_para(solo_telefono=True),
         expira_en=settings.REGISTRATION_DRAFT_TTL_SECONDS,
     )
 
@@ -321,7 +318,7 @@ async def enviar_codigo(payload: OtpEnviarIn, request: Request):
     """
     state_redis = get_state_redis()
     borrador = await _cargar_borrador(state_redis, payload.registro_id)
-    canal = _canal_para(borrador, payload.canal)
+    canal = _canal_para(borrador, payload.canal, await leer_canales_otp())
     destino = _destino(borrador, canal)
 
     if not destino:
@@ -671,7 +668,7 @@ async def iniciar_reset(payload: PasswordResetIn, request: Request):
 
     return PasswordResetOut(
         registro_id=registro_id,
-        canales_disponibles=_canales_para(PROPOSITO_RESET),
+        canales_disponibles=(await leer_canales_otp()).para(solo_telefono=False),
         canal_sugerido=borrador["canal_preferido"],
         expira_en=settings.REGISTRATION_DRAFT_TTL_SECONDS,
     )

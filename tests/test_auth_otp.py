@@ -5,6 +5,7 @@ Twilio and Odoo are replaced by doubles and holi-estado by an in-memory stand-in
 so the suite exercises the real routing, guards and token handling without
 sending a single message or touching the ERP.
 """
+import json
 import time
 
 import httpx
@@ -13,6 +14,7 @@ import pytest
 from app.clients import otp_provider as otp_provider_module
 from app.clients.otp_provider import CheckResult, OtpProvider, SendResult, set_otp_provider
 from app.clients.reniec_client import ReniecResult, set_reniec_client
+from app.core import canales_otp as canales_otp_module
 from app.core.config import settings
 from app.main import app
 from app.routers import auth as auth_router
@@ -286,12 +288,15 @@ def entorno(monkeypatch):
     # The document types are cached in holi-cache; keep that out of the real Redis.
     cache = FakeRedis()
     monkeypatch.setattr(md_router, "get_cache_redis", lambda: cache)
+    # Odoo's channel list lives there too; empty, so the env variables rule.
+    monkeypatch.setattr(canales_otp_module, "get_cache_redis", lambda: cache)
     set_otp_provider(provider)
     set_reniec_client(reniec)
 
     transport = httpx.ASGITransport(app=app)
     client = httpx.AsyncClient(transport=transport, base_url="http://test")
 
+    client.cache = cache
     yield client, redis, provider, odoo, reniec
 
     set_otp_provider(None)
@@ -614,6 +619,54 @@ async def test_whatsapp_habilitado_se_ofrece_y_envia(entorno, monkeypatch):
     assert envio.status_code == 200, envio.text
     assert envio.json()["canal"] == "whatsapp"
     assert provider.sent[-1] == ("+51987654321", "whatsapp")
+
+
+@pytest.mark.asyncio
+async def test_canales_publicados_por_odoo_mandan_sobre_el_entorno(entorno):
+    client, _redis, provider, _odoo, _reniec = entorno
+    await client.cache.set(canales_otp_module.CLAVE_CANALES_OTP,
+                           json.dumps({"canales": ["sms", "whatsapp", "correo"], "sugerido": "whatsapp"}))
+    res = await client.post("/v1/auth/register", json=REGISTRO_VALIDO)
+    assert res.json()["canales_disponibles"] == ["sms", "whatsapp"]
+    assert res.json()["canal_sugerido"] == "whatsapp"
+    envio = await client.post("/v1/auth/otp/send", json={"registro_id": res.json()["registro_id"]})
+    assert envio.json()["canal"] == "whatsapp"
+    assert provider.sent[-1] == ("+51987654321", "whatsapp")
+
+
+@pytest.mark.asyncio
+async def test_canal_apagado_en_odoo_se_rechaza(entorno):
+    client, _redis, _provider, _odoo, _reniec = entorno
+    await client.cache.set(canales_otp_module.CLAVE_CANALES_OTP, json.dumps({"canales": ["sms"], "sugerido": "sms"}))
+    registro_id = await _abrir_registro(client)
+    res = await client.post("/v1/auth/otp/send", json={"registro_id": registro_id, "canal": "whatsapp"})
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("publicado", [
+    json.dumps({"canales": ["correo"], "sugerido": "correo"}),  # no phone channel
+    "no es json",
+    json.dumps(None),
+])
+async def test_publicacion_invalida_usa_las_variables_de_entorno(entorno, monkeypatch, publicado):
+    client, _redis, _provider, _odoo, _reniec = entorno
+    monkeypatch.setattr(settings, "OTP_CHANNELS_ENABLED", "sms,correo")
+    await client.cache.set(canales_otp_module.CLAVE_CANALES_OTP, publicado)
+    res = await client.post("/v1/auth/register", json=REGISTRO_VALIDO)
+    assert res.json()["canales_disponibles"] == ["sms"]
+
+
+@pytest.mark.asyncio
+async def test_redis_caido_usa_las_variables_de_entorno(monkeypatch):
+    class Caido:
+        async def get(self, key):
+            raise ConnectionError("redis down")
+    monkeypatch.setattr(canales_otp_module, "get_cache_redis", lambda: Caido())
+    monkeypatch.setattr(settings, "OTP_CHANNELS_ENABLED", "sms,correo")
+    canales = await canales_otp_module.leer_canales_otp()
+    assert canales.para(solo_telefono=True) == ["sms"]
+    assert canales.para(solo_telefono=False) == ["sms", "correo"]
 
 
 @pytest.mark.parametrize("codigo", [60223, 68008])
