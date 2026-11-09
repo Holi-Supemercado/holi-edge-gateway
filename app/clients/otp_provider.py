@@ -167,6 +167,12 @@ def _translate_twilio_error(res: httpx.Response) -> tuple:
                 "Too many codes sent to this destination. Try again later.", "limite_proveedor"),
         60205: (400, "Channel Unsupported For Destination",
                 "This destination cannot receive the code on the chosen channel.", "canal_no_soportado"),
+        # WhatsApp needs our own sender (WABA) linked to the Verify service;
+        # until then Twilio refuses the channel outright.
+        60223: (400, "Channel Disabled", "The verification channel is disabled in the provider.",
+                "canal_no_soportado"),
+        68008: (400, "Channel Not Configured",
+                "The WhatsApp channel is not configured in the provider.", "canal_no_soportado"),
         60212: (429, "Too Many Concurrent Requests",
                 "Too many concurrent verifications. Try again shortly.", "limite_proveedor"),
     }

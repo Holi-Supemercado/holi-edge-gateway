@@ -603,6 +603,28 @@ async def test_canal_no_habilitado_es_rechazado(entorno):
 
 
 @pytest.mark.asyncio
+async def test_whatsapp_habilitado_se_ofrece_y_envia(entorno, monkeypatch):
+    """With WhatsApp on, sign-up offers it next to SMS, never the e-mail (ADR-017)."""
+    client, _redis, provider, _odoo, _reniec = entorno
+    monkeypatch.setattr(settings, "OTP_CHANNELS_ENABLED", "sms,whatsapp,correo")
+    res = await client.post("/v1/auth/register", json=REGISTRO_VALIDO)
+    assert res.json()["canales_disponibles"] == ["sms", "whatsapp"]
+    envio = await client.post("/v1/auth/otp/send",
+                              json={"registro_id": res.json()["registro_id"], "canal": "whatsapp"})
+    assert envio.status_code == 200, envio.text
+    assert envio.json()["canal"] == "whatsapp"
+    assert provider.sent[-1] == ("+51987654321", "whatsapp")
+
+
+@pytest.mark.parametrize("codigo", [60223, 68008])
+def test_whatsapp_sin_configurar_en_twilio_es_canal_no_disponible(codigo):
+    """Twilio refuses WhatsApp until the Verify service has its own sender."""
+    res = httpx.Response(400, json={"code": codigo, "message": "Delivery channel disabled: WHATSAPP"})
+    status, _title, _detail, reason = otp_provider_module._translate_twilio_error(res)
+    assert (status, reason) == (400, "canal_no_soportado")
+
+
+@pytest.mark.asyncio
 async def test_registro_inexistente_o_expirado(entorno):
     client, _redis, _provider, _odoo, _reniec = entorno
     res = await client.post("/v1/auth/otp/send", json={"registro_id": "no-existe"})
