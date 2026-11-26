@@ -13,6 +13,7 @@ from ..clients.reniec_client import get_reniec_client
 from ..core.breaker import CircuitBreakerOpenError
 from ..core.canales_otp import CanalesOtp, leer_canales_otp
 from ..core.config import settings
+from ..core.deps import ip_del_cliente
 from ..core.errors import ApiError, desde_odoo
 from ..core.limits import check_rate_limit
 from ..core.otp_guard import (
@@ -61,14 +62,6 @@ REFRESH_TTL_SECONDS = settings.JWT_REFRESH_EXPIRE_DAYS * 86400
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-
-def _client_ip(request: Request) -> str:
-    """Behind Cloud Run the caller's address is the first hop of X-Forwarded-For."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else ""
-
 
 def _request_id(request: Request) -> str:
     return request.state.request_id
@@ -224,7 +217,7 @@ async def registrar(payload: RegistroIn, request: Request):
     """
     state_redis = get_state_redis()
     request_id = _request_id(request)
-    ip = _client_ip(request)
+    ip = ip_del_cliente(request)
 
     if not await check_rate_limit(state_redis, "register", ip or "sin-ip", max_requests=10, window_seconds=3600):
         raise ApiError("limite-excedido", "Demasiados intentos de registro. Inténtalo más tarde.")
@@ -324,7 +317,7 @@ async def enviar_codigo(payload: OtpEnviarIn, request: Request):
     if not destino:
         raise ApiError("destino-invalido", "El registro no tiene un destino válido para el código.")
 
-    veredicto = await check_send_allowed(state_redis, destino, _client_ip(request), payload.registro_id)
+    veredicto = await check_send_allowed(state_redis, destino, ip_del_cliente(request), payload.registro_id)
     if not veredicto.allowed:
         raise send_refusal(veredicto)
 
@@ -524,7 +517,7 @@ async def login(payload: LoginIn, request: Request):
     """Odoo holds the hash and returns the verdict (RF-001); the Edge owns the session."""
     state_redis = get_state_redis()
     request_id = _request_id(request)
-    ip = _client_ip(request)
+    ip = ip_del_cliente(request)
 
     if not await check_rate_limit(state_redis, "login", f"{payload.correo}|{ip}", max_requests=10, window_seconds=300):
         raise ApiError("limite-excedido", "Demasiados intentos de inicio de sesión. Espera unos minutos.")
@@ -636,7 +629,7 @@ async def iniciar_reset(payload: PasswordResetIn, request: Request):
     """
     state_redis = get_state_redis()
     request_id = _request_id(request)
-    ip = _client_ip(request)
+    ip = ip_del_cliente(request)
 
     if not await check_rate_limit(state_redis, "reset", ip or "sin-ip", max_requests=10, window_seconds=3600):
         raise ApiError("limite-excedido", "Demasiadas solicitudes de recuperación. Inténtalo más tarde.")

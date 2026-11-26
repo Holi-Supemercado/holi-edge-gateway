@@ -14,13 +14,13 @@ from ..clients.odoo_client import OdooClient, OdooClientError
 from ..clients.otp_provider import get_otp_provider
 from ..clients.redis_client import get_state_redis
 from ..core.config import settings
-from ..core.deps import ClienteId, RequestId
+from ..core.deps import ClienteId, RequestId, ip_del_cliente
 from ..core.errors import ApiError
 from ..core.otp_guard import check_send_allowed, register_check_attempt, send_refusal, start_cooldown
 from ..core.passwords import mask_destination
 from ..schemas.auth import OtpEnviarOut
 from ..schemas.perfil import CorreoVerificadoOut, CorreoVerificarIn
-from .auth import _client_ip, primer_nombre
+from .auth import primer_nombre
 
 _logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/me", tags=["Perfil"])
@@ -51,7 +51,7 @@ async def enviar_codigo_correo(cliente_id: ClienteId, request: Request, request_
     if estado.get("email_verified"):
         raise ApiError("correo-ya-verificado")
 
-    veredicto = await check_send_allowed(state_redis, correo, _client_ip(request), clave)
+    veredicto = await check_send_allowed(state_redis, correo, ip_del_cliente(request), clave)
     if not veredicto.allowed:
         raise send_refusal(veredicto)
 

@@ -44,6 +44,8 @@ CATALOGO: Dict[str, Tuple[int, str, str]] = {
     "sesion-expirada": (401, "Sesión expirada", "El token de renovación no es válido o expiró."),
     "sesion-revocada": (401, "Sesión revocada",
                         "Sesión invalidada por motivos de seguridad. Vuelve a iniciar sesión."),
+    "servicio-no-autorizado": (401, "Servicio no autorizado",
+                               "La credencial del servicio no es válida o expiró."),
     # 403
     "datos-fiscales-incompletos": (403, "Datos fiscales incompletos", "Completa tu documento de identidad."),
     "telefono-no-verificado": (403, "Teléfono no verificado", "Debes verificar tu número de teléfono."),

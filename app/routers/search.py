@@ -4,7 +4,8 @@ from fastapi import APIRouter, Query
 
 from ..clients.meili_client import MeiliClient
 from ..clients.redis_client import get_cache_redis
-from ..core.deps import SedeRequerida
+from ..core.config import settings
+from ..core.deps import SedeRequerida, limite_por_minuto
 from ..schemas.catalog import BusquedaOut
 from ..schemas.common import Paginacion
 from .catalog import hidratar_productos
@@ -16,7 +17,8 @@ meili = MeiliClient()
 POR_PAGINA_MAX = 50
 
 
-@router.get("/search", response_model=BusquedaOut)
+@router.get("/search", response_model=BusquedaOut,
+            dependencies=[limite_por_minuto("busqueda", settings.RATE_LIMIT_SEARCH_PER_MINUTE)])
 async def buscar_productos(
     sede: SedeRequerida,
     q: str = Query(..., min_length=1, max_length=100),

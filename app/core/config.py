@@ -90,6 +90,23 @@ class Settings(BaseSettings):
     # Password policy surfaced in the public contract (M1.9 validates it live)
     PASSWORD_MIN_LENGTH: int = 8
 
+    # agent-api, the shopping agent on Cloud Run. It proves itself with a Google
+    # ID token of its service account (X-Holi-Agent-Token). Both empty means no
+    # agent is admitted: its token is refused rather than trusted unchecked.
+    AGENT_SERVICE_ACCOUNTS: str = ""   # comma-separated service account emails
+    AGENT_TOKEN_AUDIENCE: str = ""     # the audience agent-api requests its token for
+
+    # Per-minute limits on the routes an agent drives hardest. Counted per
+    # customer with a session, per IP without one, and for the agent per the
+    # customer it serves: all of its traffic leaves Cloud Run from one IP.
+    RATE_LIMIT_SEARCH_PER_MINUTE: int = 120
+    RATE_LIMIT_CART_PER_MINUTE: int = 60
+    RATE_LIMIT_CHECKOUT_PER_MINUTE: int = 10
+
+    @property
+    def agent_service_accounts(self) -> set[str]:
+        return {c.strip().lower() for c in self.AGENT_SERVICE_ACCOUNTS.split(",") if c.strip()}
+
     @property
     def otp_channels(self) -> list[str]:
         return [c.strip() for c in self.OTP_CHANNELS_ENABLED.split(",") if c.strip()]
