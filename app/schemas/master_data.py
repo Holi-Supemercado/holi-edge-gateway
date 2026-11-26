@@ -90,6 +90,8 @@ class Tienda(BaseModel):
     latitud: Optional[float] = Field(default=None, description="Nulo si la tienda no tiene coordenadas cargadas")
     longitud: Optional[float] = None
     por_defecto: bool = Field(description="true para la sede que el Edge usa cuando falta X-Holi-Sede")
+    horario: str = Field(default="", description="Texto libre de Odoo, p. ej. «7:00 AM - 10:00 PM»; vacío si no está cargado")
+    telefono: str = Field(default="", description="Teléfono del almacén de la tienda; vacío si no tiene")
 
 
 class TiendasOut(Lista[Tienda]):

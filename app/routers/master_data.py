@@ -228,6 +228,8 @@ async def listar_tiendas(request_id: RequestId):
             latitud=t.get("latitud") or None,
             longitud=t.get("longitud") or None,
             por_defecto=bool(t.get("por_defecto")),
+            horario=t.get("horario") or "",
+            telefono=t.get("telefono") or "",
         )
         for t in data.get("tiendas", [])
     ])

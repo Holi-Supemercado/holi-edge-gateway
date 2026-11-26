@@ -76,7 +76,8 @@ class FakeOdooMaster:
         self._guard("stores")
         return {"tiendas": [
             {"sede": "CHACH", "nombre": "Holi - Chacarilla", "direccion": "Av. Primavera 805",
-             "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True},
+             "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True,
+             "horario": "7:00 AM - 10:00 PM", "telefono": "01 555 0101"},
             {"sede": "SURCO", "nombre": "Holi - Surco", "direccion": "", "distrito": "",
              "latitud": 0.0, "longitud": 0.0, "por_defecto": False},
         ]}
@@ -385,8 +386,10 @@ async def test_listado_de_tiendas_llega_intacto_y_se_cachea(entorno):
     assert res.status_code == 200
     items = res.json()["items"]
     assert items[0] == {"sede": "CHACH", "nombre": "Holi - Chacarilla", "direccion": "Av. Primavera 805",
-                        "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True}
+                        "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True,
+                        "horario": "7:00 AM - 10:00 PM", "telefono": "01 555 0101"}
     assert items[1]["latitud"] is None, "a store without coordinates must not point to (0, 0)"
+    assert (items[1]["horario"], items[1]["telefono"]) == ("", ""), "an older Odoo without these fields still works"
 
     await client.get("/v1/stores")
     assert odoo.calls.count("stores") == 1
