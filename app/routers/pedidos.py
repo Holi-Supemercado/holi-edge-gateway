@@ -10,19 +10,26 @@ from fastapi import APIRouter, Query
 from ..clients.odoo_client import OdooClient
 from ..core.deps import ClienteId, RequestId
 from ..schemas.common import Paginacion
-from ..schemas.pedidos import LineaPedido, PedidoDetalle, PedidoResumen, PedidosOut
+from ..schemas.pedidos import LineaPedido, PedidoDetalle, PedidosOut
 
 router = APIRouter(prefix="/v1/orders", tags=["Pedidos"])
 odoo_client = OdooClient()
 
 
-def _resumen(o: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "id": o["id"], "numero": o.get("number", ""), "fecha": o.get("date"), "estado": o.get("status", ""),
-        "sede": o.get("store_code"), "direccion": o.get("address", ""), "direccion_id": o.get("address_id"),
-        "subtotal": o.get("untaxed", 0.0), "impuestos": o.get("tax", 0.0), "total": o.get("total", 0.0),
-        "cantidad_items": o.get("item_count", 0),
-    }
+def _pedido(o: Dict[str, Any]) -> PedidoDetalle:
+    """Odoo's order (English, ADR-012) as the contract shows it."""
+    return PedidoDetalle(
+        id=o["id"], numero=o.get("number", ""), fecha=o.get("date"), estado=o.get("status", ""),
+        sede=o.get("store_code"), direccion=o.get("address", ""), direccion_id=o.get("address_id"),
+        subtotal=o.get("untaxed", 0.0), impuestos=o.get("tax", 0.0), total=o.get("total", 0.0),
+        cantidad_items=o.get("item_count", 0),
+        lineas=[
+            LineaPedido(sku=linea.get("sku", ""), nombre=linea.get("name", ""), cantidad=linea.get("quantity", 0.0),
+                        unidad=linea.get("uom", ""), precio_unitario=linea.get("price_unit", 0.0),
+                        subtotal=linea.get("subtotal", 0.0))
+            for linea in o.get("lines", [])
+        ],
+    )
 
 
 @router.get("", response_model=PedidosOut)
@@ -32,10 +39,10 @@ async def listar_pedidos(
     pagina: int = Query(1, ge=1),
     por_pagina: int = Query(20, ge=1, le=50),
 ):
-    """The customer's app orders, newest first."""
+    """The customer's app orders, newest first, each with its lines."""
     data = await odoo_client.customer_orders(cliente_id, pagina, por_pagina, request_id)
     return PedidosOut(
-        items=[PedidoResumen(**_resumen(o)) for o in data.get("orders", [])],
+        items=[_pedido(o) for o in data.get("orders", [])],
         paginacion=Paginacion(pagina=pagina, por_pagina=por_pagina, total=data.get("total", 0)),
     )
 
@@ -43,10 +50,4 @@ async def listar_pedidos(
 @router.get("/{pedido_id}", response_model=PedidoDetalle)
 async def ver_pedido(pedido_id: int, cliente_id: ClienteId, request_id: RequestId):
     """One order with its lines."""
-    o = (await odoo_client.customer_order(cliente_id, pedido_id, request_id))["order"]
-    lineas = [
-        LineaPedido(sku=l.get("sku", ""), nombre=l.get("name", ""), cantidad=l.get("quantity", 0.0),
-                    unidad=l.get("uom", ""), precio_unitario=l.get("price_unit", 0.0), subtotal=l.get("subtotal", 0.0))
-        for l in o.get("lines", [])
-    ]
-    return PedidoDetalle(**_resumen(o), lineas=lineas)
+    return _pedido((await odoo_client.customer_order(cliente_id, pedido_id, request_id))["order"])

@@ -32,5 +32,5 @@ class PedidoDetalle(PedidoResumen):
     lineas: List[LineaPedido]
 
 
-class PedidosOut(ListaPaginada[PedidoResumen]):
-    pass
+class PedidosOut(ListaPaginada[PedidoDetalle]):
+    """Each order comes with its lines: the app shows what it had without a call per order."""

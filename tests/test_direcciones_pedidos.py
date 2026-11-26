@@ -54,15 +54,14 @@ class FakeOdooCliente:
             "id": 10, "number": "S00010", "date": "2026-11-26T15:00:00Z", "status": "confirmado",
             "store_code": "CHACH", "address": "Av. Larco 1234, Miraflores", "address_id": 41,
             "untaxed": 21.19, "tax": 3.81, "total": 25.0, "item_count": 2,
+            "lines": [{"sku": "LECHE", "name": "Leche", "quantity": 2.0, "uom": "Unidades",
+                       "price_unit": 5.4, "subtotal": 10.8}],
         }]}
 
     async def customer_order(self, partner_id, order_id, request_id):
         if order_id != 10:
             raise OdooClientError(404, "Not Found", "The order does not exist.", {"codigo": "no-encontrado"})
-        orden = (await self.customer_orders(partner_id, 1, 1, request_id))["orders"][0]
-        return {"order": dict(orden, lines=[
-            {"sku": "LECHE", "name": "Leche", "quantity": 2.0, "uom": "Unidades", "price_unit": 5.4, "subtotal": 10.8},
-        ])}
+        return {"order": (await self.customer_orders(partner_id, 1, 1, request_id))["orders"][0]}
 
     async def fetch_coverage_zones(self, request_id):
         # A square around Miraflores, delivered by CHACH.
@@ -174,6 +173,7 @@ async def test_pedidos_del_cliente_paginados(entorno):
     assert cuerpo["paginacion"] == {"pagina": 2, "por_pagina": 5, "total": 1}
     pedido = cuerpo["items"][0]
     assert (pedido["numero"], pedido["estado"], pedido["sede"], pedido["total"]) == ("S00010", "confirmado", "CHACH", 25.0)
+    assert [linea["sku"] for linea in pedido["lineas"]] == ["LECHE"]
     assert odoo.llamadas[0] == ("pedidos", 7, 2, 5)
 
 
