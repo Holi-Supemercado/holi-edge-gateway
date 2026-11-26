@@ -10,6 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.clients.odoo_client import OdooClientError
 from app.core import agente as agente_module
 from app.core import deps as deps_module
 from app.core.config import settings
@@ -174,3 +175,49 @@ async def test_la_compra_ignora_el_precio_enviado_y_usa_el_publicado(entorno):
         {"sku": "SIN-PRECIO", "qty": 1.0},
     ]
     assert odoo.pedidos[0]["partner_id"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Quote: what the order costs, computed by Odoo
+# --------------------------------------------------------------------------- #
+
+COTIZACION_ODOO = {
+    "subtotal": 9.0, "app_discount": 0.9, "app_discount_percent": 10.0, "delivery_fee": 9.9,
+    "free_delivery_threshold": 300.0, "missing_for_free_delivery": 291.0, "min_order_amount": 5.0,
+    "untaxed": 15.26, "tax": 2.74, "total": 18.0,
+}
+
+
+@pytest.mark.asyncio
+async def test_la_cotizacion_usa_el_precio_publicado_y_traduce_los_montos(entorno, monkeypatch):
+    cliente, _, odoo = entorno
+    enviado = {}
+
+    async def checkout_quote(sede, partner_id, lines, request_id):
+        enviado.update(sede=sede, partner_id=partner_id, lines=lines)
+        return COTIZACION_ODOO
+
+    monkeypatch.setattr(odoo, "checkout_quote", checkout_quote, raising=False)
+    res = await cliente.post("/v1/checkout/quote", json={"lineas": [{"sku": "LECHE", "cantidad": 2}]},
+                             headers={**SEDE, **_sesion(7)})
+    assert res.status_code == 200, res.text
+    assert res.json() == {
+        "subtotal": 9.0, "descuento_app": 0.9, "descuento_app_pct": 10.0, "envio": 9.9, "envio_gratis_desde": 300.0,
+        "faltante_envio_gratis": 291.0, "pedido_minimo": 5.0, "impuestos": 2.74, "total": 18.0,
+    }
+    assert enviado == {"sede": "CHACH", "partner_id": 7, "lines": [{"sku": "LECHE", "qty": 2.0, "price_unit": 4.5}]}
+
+
+@pytest.mark.asyncio
+async def test_por_debajo_del_minimo_es_422(entorno, monkeypatch):
+    cliente, _, odoo = entorno
+
+    async def checkout_quote(sede, partner_id, lines, request_id):
+        raise OdooClientError(422, "Minimum Order Not Reached", "The minimum order is 20.00.",
+                              {"codigo": "pedido-minimo", "minimo": 20.0, "faltante": 11.0})
+
+    monkeypatch.setattr(odoo, "checkout_quote", checkout_quote, raising=False)
+    res = await cliente.post("/v1/checkout/quote", json={"lineas": [{"sku": "LECHE", "cantidad": 2}]}, headers=SEDE)
+    assert res.status_code == 422
+    assert res.json()["type"].endswith("/pedido-minimo")
+    assert res.json()["faltante"] == 11.0

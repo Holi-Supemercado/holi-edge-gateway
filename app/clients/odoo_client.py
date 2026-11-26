@@ -100,6 +100,13 @@ class OdooClient:
         }
         return await self._call_odoo("POST", "/api/ecommerce/internal/checkout", data=order_data, headers=headers)
 
+    async def checkout_quote(self, sede_code: str, partner_id: Optional[int], lines: list,
+                             request_id: str) -> Dict[str, Any]:
+        """What the order would cost, computed by the same code the checkout uses."""
+        payload = {"sede_code": sede_code, "partner_id": partner_id, "lines": lines}
+        return await self._call_odoo("POST", "/api/ecommerce/internal/checkout/quote", data=payload,
+                                     headers={"X-Request-Id": request_id, "X-Holi-Sede": sede_code})
+
     async def fetch_product_sync(self, sku: str, sede_code: str, request_id: str) -> Dict[str, Any]:
         """Fetch product payload from Odoo upon cache-miss."""
         headers = {

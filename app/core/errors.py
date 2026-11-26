@@ -71,6 +71,7 @@ CATALOGO: Dict[str, Tuple[int, str, str]] = {
     "codigo-expirado": (410, "Código expirado", "El código expiró. Solicita uno nuevo."),
     # 422 — the request itself is malformed: a defect of the app, not of the user
     "parametros-invalidos": (422, "Parámetros inválidos", "La solicitud tiene parámetros inválidos."),
+    "pedido-minimo": (422, "Pedido mínimo", "Tu pedido no llega al monto mínimo."),
     "idempotency-key-requerida": (422, "Idempotency-Key requerida",
                                   "Esta operación exige la cabecera Idempotency-Key."),
     # 423

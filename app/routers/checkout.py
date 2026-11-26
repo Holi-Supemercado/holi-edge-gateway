@@ -10,7 +10,7 @@ from ..clients.redis_client import get_cache_redis, get_state_redis
 from ..core.config import settings
 from ..core.deps import ClienteOpcional, IdempotencyKey, RequestId, SedeRequerida, limite_por_minuto
 from ..core.errors import ApiError, desde_odoo
-from ..schemas.checkout import CompraIn, CompraOut, Franja, FranjasOut, LineaCompraIn
+from ..schemas.checkout import CompraIn, CompraOut, CotizacionIn, CotizacionOut, Franja, FranjasOut, LineaCompraIn
 from .cart import precio_publicado
 
 _logger = logging.getLogger(__name__)
@@ -55,6 +55,23 @@ async def _lineas_para_odoo(sede: str, lineas: List[LineaCompraIn]) -> List[Dict
             vals["price_unit"] = precio
         resultado.append(vals)
     return resultado
+
+
+@router.post("/quote", response_model=CotizacionOut)
+async def cotizar_compra(cotizacion: CotizacionIn, sede: SedeRequerida, request_id: RequestId,
+                         cliente: ClienteOpcional):
+    """
+    What the order would cost: products at the store's price, the app discount
+    and delivery. Odoo computes it with the same code the checkout uses, so the
+    customer pays exactly the `total` shown. Below the minimum is 422 pedido-minimo.
+    """
+    q = await odoo_client.checkout_quote(sede, cliente, await _lineas_para_odoo(sede, cotizacion.lineas), request_id)
+    return CotizacionOut(
+        subtotal=q["subtotal"], descuento_app=q["app_discount"], descuento_app_pct=q["app_discount_percent"],
+        envio=q["delivery_fee"], envio_gratis_desde=q["free_delivery_threshold"],
+        faltante_envio_gratis=q["missing_for_free_delivery"], pedido_minimo=q["min_order_amount"],
+        impuestos=q["tax"], total=q["total"],
+    )
 
 
 @router.post("", response_model=CompraOut,

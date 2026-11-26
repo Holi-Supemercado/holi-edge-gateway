@@ -22,6 +22,7 @@ def _pedido(o: Dict[str, Any]) -> PedidoDetalle:
         id=o["id"], numero=o.get("number", ""), fecha=o.get("date"), estado=o.get("status", ""),
         sede=o.get("store_code"), direccion=o.get("address", ""), direccion_id=o.get("address_id"),
         subtotal=o.get("untaxed", 0.0), impuestos=o.get("tax", 0.0), total=o.get("total", 0.0),
+        envio=o.get("delivery_fee", 0.0), descuento=o.get("discount_total", 0.0),
         cantidad_items=o.get("item_count", 0),
         lineas=[
             LineaPedido(sku=linea.get("sku", ""), nombre=linea.get("name", ""), cantidad=linea.get("quantity", 0.0),

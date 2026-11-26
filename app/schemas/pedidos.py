@@ -16,6 +16,8 @@ class PedidoResumen(BaseModel):
     subtotal: float = Field(description="Sin impuestos")
     impuestos: float
     total: float
+    envio: float = Field(0.0, description="Costo de envío cobrado, con impuestos")
+    descuento: float = Field(0.0, description="Lo que restó el descuento de la app")
     cantidad_items: int
 
 

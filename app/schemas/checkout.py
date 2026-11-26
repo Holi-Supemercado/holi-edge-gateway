@@ -19,6 +19,26 @@ class CompraIn(BaseModel):
     notas: Optional[str] = None
 
 
+class CotizacionIn(BaseModel):
+    lineas: List[LineaCompraIn] = Field(min_length=1)
+
+
+class CotizacionOut(BaseModel):
+    """
+    What the order costs, computed by Odoo with the same rules as the checkout:
+    the app shows these amounts and the customer pays exactly `total`.
+    """
+    subtotal: float = Field(description="Suma de los productos a precio de la sede")
+    descuento_app: float
+    descuento_app_pct: float
+    envio: float = Field(description="0 si llega al envío gratis")
+    envio_gratis_desde: float
+    faltante_envio_gratis: float
+    pedido_minimo: float
+    impuestos: float
+    total: float
+
+
 class CompraOut(BaseModel):
     pedido_id: int
     numero: str
