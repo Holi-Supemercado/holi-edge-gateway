@@ -149,3 +149,18 @@ async def actualizar_linea(
         await state_redis.expire(lines_key, CARRITO_TTL_SECONDS)
 
     return await _leer_carrito(state_redis, cart_id, sede)
+
+
+@router.delete("/lines/{sku}", response_model=CarritoOut,
+               dependencies=[limite_por_minuto("carrito", settings.RATE_LIMIT_CART_PER_MINUTE)])
+async def quitar_linea(
+    sku: str,
+    sede: SedeRequerida,
+    cliente: ClienteOpcional,
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+):
+    """Removes a SKU from the cart; removing one that is not there is not an error."""
+    state_redis = get_state_redis()
+    cart_id = await _resolve_cart_id(state_redis, cliente, x_device_id)
+    await state_redis.hdel(f"cart:{cart_id}:lines", sku)
+    return await _leer_carrito(state_redis, cart_id, sede)

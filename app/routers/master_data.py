@@ -159,6 +159,11 @@ async def resolver_cobertura(
     almost always the two values swapped, and rejecting it with 422 says so far
     more clearly than answering that we do not deliver to the Pacific.
     """
+    return await cobertura_de(lat, lng, request_id)
+
+
+async def cobertura_de(lat: float, lng: float, request_id: str) -> CoberturaOut:
+    """The coverage answer for a point; the delivery addresses reuse it."""
     data = await _cached(
         "md:coverage:zones",
         settings.COVERAGE_ZONES_TTL_SECONDS,

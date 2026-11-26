@@ -6,7 +6,9 @@ customer chooses to, and a purchase needs both. Same division of labour as
 sign-up (ADR-013): Twilio Verify sends and judges the code, the Edge counts
 and throttles, and Odoo only receives the proven fact.
 """
+import asyncio
 import logging
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
 
@@ -19,8 +21,13 @@ from ..core.errors import ApiError
 from ..core.otp_guard import check_send_allowed, register_check_attempt, send_refusal, start_cooldown
 from ..core.passwords import mask_destination
 from ..schemas.auth import OtpEnviarOut
-from ..schemas.perfil import CorreoVerificadoOut, CorreoVerificarIn
+from ..schemas.common import MensajeOut
+from ..schemas.perfil import (
+    CoberturaDireccion, CorreoVerificadoOut, CorreoVerificarIn, Direccion, DireccionCambios, DireccionesOut,
+    DireccionIn,
+)
 from .auth import primer_nombre
+from .master_data import cobertura_de
 
 _logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/me", tags=["Perfil"])
@@ -110,3 +117,75 @@ async def verificar_codigo_correo(payload: CorreoVerificarIn, cliente_id: Client
     await state_redis.delete(_sesion_otp(cliente_id), f"otp:try:{clave}")
     _logger.info("E-mail verified for partner %s (%s)", cliente_id, request_id)
     return CorreoVerificadoOut(correo_verificado=True)
+
+
+# --------------------------------------------------------------------------- #
+# Delivery addresses. Odoo keeps them as the customer's delivery contacts;
+# the Edge adds which store delivers there, from its coverage polygons.
+# --------------------------------------------------------------------------- #
+
+# Contract field -> Odoo field (ADR-012: Spanish outside, English inside).
+_A_ODOO = {
+    "etiqueta": "label", "calle": "street", "referencia": "reference", "distrito_id": "district_id",
+    "latitud": "latitude", "longitud": "longitude", "por_defecto": "is_default",
+}
+
+
+async def _cobertura(direccion: Dict[str, Any], request_id: str) -> Optional[CoberturaDireccion]:
+    lat, lng = direccion.get("latitude"), direccion.get("longitude")
+    if lat is None or lng is None:
+        return None
+    try:
+        respuesta = await cobertura_de(lat, lng, request_id)
+    except Exception as e:  # noqa: BLE001 — an address list must not fail for the coverage lookup
+        _logger.warning("Coverage lookup failed for an address: %s", e)
+        return None
+    return CoberturaDireccion(cobertura=respuesta.cobertura, sede=respuesta.tienda.sede if respuesta.tienda else None)
+
+
+async def _direcciones(crudas: List[Dict[str, Any]], request_id: str) -> List[Direccion]:
+    coberturas = await asyncio.gather(*(_cobertura(d, request_id) for d in crudas))
+    return [
+        Direccion(
+            id=d["id"], etiqueta=d.get("label", ""), calle=d.get("street", ""), referencia=d.get("reference", ""),
+            distrito_id=d.get("district_id"), distrito=d.get("district_name", ""),
+            provincia_id=d.get("province_id"), departamento_id=d.get("department_id"),
+            latitud=d.get("latitude"), longitud=d.get("longitude"), por_defecto=bool(d.get("is_default")),
+            cobertura=cobertura,
+        )
+        for d, cobertura in zip(crudas, coberturas)
+    ]
+
+
+def _para_odoo(campos: Dict[str, Any]) -> Dict[str, Any]:
+    return {_A_ODOO[k]: v for k, v in campos.items() if k in _A_ODOO}
+
+
+@router.get("/addresses", response_model=DireccionesOut)
+async def listar_direcciones(cliente_id: ClienteId, request_id: RequestId):
+    """The customer's delivery addresses, the default one first."""
+    data = await odoo_client.customer_addresses(cliente_id, request_id)
+    return DireccionesOut(items=await _direcciones(data.get("addresses", []), request_id))
+
+
+@router.post("/addresses", response_model=Direccion)
+async def crear_direccion(direccion: DireccionIn, cliente_id: ClienteId, request_id: RequestId):
+    """A new delivery address. The first one becomes the default."""
+    data = await odoo_client.customer_save_address(cliente_id, _para_odoo(direccion.model_dump()), None, request_id)
+    return (await _direcciones([data["address"]], request_id))[0]
+
+
+@router.patch("/addresses/{direccion_id}", response_model=Direccion)
+async def actualizar_direccion(direccion_id: int, cambios: DireccionCambios, cliente_id: ClienteId,
+                               request_id: RequestId):
+    """Changes only the fields sent. An address of another customer is 404."""
+    campos = _para_odoo(cambios.model_dump(exclude_unset=True))
+    data = await odoo_client.customer_save_address(cliente_id, campos, direccion_id, request_id)
+    return (await _direcciones([data["address"]], request_id))[0]
+
+
+@router.delete("/addresses/{direccion_id}", response_model=MensajeOut)
+async def eliminar_direccion(direccion_id: int, cliente_id: ClienteId, request_id: RequestId):
+    """Removes the address from the list; past orders keep it. If it was the default, another takes its place."""
+    await odoo_client.customer_delete_address(cliente_id, direccion_id, request_id)
+    return MensajeOut(mensaje="Dirección eliminada.")

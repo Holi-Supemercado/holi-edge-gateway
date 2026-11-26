@@ -223,3 +223,34 @@ class OdooClient:
         headers = {"X-Request-Id": request_id}
         return await self._call_odoo("GET", "/api/ecommerce/internal/master/coverage-zones",
                                      headers=headers)
+
+    # --- What a customer owns: delivery addresses and orders. The partner id
+    # travels inside the signed body, so reads are POST too. ---
+
+    async def customer_addresses(self, partner_id: int, request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/addresses",
+                                     data={"partner_id": partner_id}, headers={"X-Request-Id": request_id})
+
+    async def customer_save_address(self, partner_id: int, address: Dict[str, Any], address_id: Optional[int],
+                                    request_id: str) -> Dict[str, Any]:
+        """Creates the address, or updates only the fields given when `address_id` comes."""
+        payload: Dict[str, Any] = {"partner_id": partner_id, "address": address}
+        if address_id:
+            payload["address_id"] = address_id
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/addresses/save",
+                                     data=payload, headers={"X-Request-Id": request_id})
+
+    async def customer_delete_address(self, partner_id: int, address_id: int, request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/addresses/delete",
+                                     data={"partner_id": partner_id, "address_id": address_id},
+                                     headers={"X-Request-Id": request_id})
+
+    async def customer_orders(self, partner_id: int, page: int, page_size: int, request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/orders",
+                                     data={"partner_id": partner_id, "page": page, "page_size": page_size},
+                                     headers={"X-Request-Id": request_id})
+
+    async def customer_order(self, partner_id: int, order_id: int, request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/orders/detail",
+                                     data={"partner_id": partner_id, "order_id": order_id},
+                                     headers={"X-Request-Id": request_id})
