@@ -6,9 +6,9 @@ from .common import Lista
 
 
 class LineaCompraIn(BaseModel):
+    """The price is never taken from here: the Edge uses the one the store published."""
     sku: str
     cantidad: float = Field(gt=0)
-    precio_unitario: Optional[float] = None
 
 
 class CompraIn(BaseModel):

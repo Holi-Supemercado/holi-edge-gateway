@@ -1,15 +1,17 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter
 
 from ..clients.odoo_client import OdooClient, OdooClientError
-from ..clients.redis_client import get_state_redis
-from ..core.deps import IdempotencyKey, RequestId, SedeRequerida
+from ..clients.redis_client import get_cache_redis, get_state_redis
+from ..core.config import settings
+from ..core.deps import ClienteOpcional, IdempotencyKey, RequestId, SedeRequerida, limite_por_minuto
 from ..core.errors import ApiError, desde_odoo
-from ..schemas.checkout import CompraIn, CompraOut, Franja, FranjasOut
+from ..schemas.checkout import CompraIn, CompraOut, Franja, FranjasOut, LineaCompraIn
+from .cart import precio_publicado
 
 _logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/checkout", tags=["Checkout"])
@@ -38,12 +40,31 @@ async def listar_franjas(sede: SedeRequerida, request_id: RequestId):
     return FranjasOut(sede=sede, items=franjas)
 
 
-@router.post("", response_model=CompraOut)
+async def _lineas_para_odoo(sede: str, lineas: List[LineaCompraIn]) -> List[Dict[str, Any]]:
+    """
+    The order lines with the price the store published, never one the caller
+    sent. A SKU with no published price goes without one and Odoo prices it
+    with the store's pricelist.
+    """
+    cache_redis = get_cache_redis()
+    resultado = []
+    for linea in lineas:
+        vals: Dict[str, Any] = {"sku": linea.sku, "qty": linea.cantidad}
+        precio = await precio_publicado(cache_redis, sede, linea.sku)
+        if precio:
+            vals["price_unit"] = precio
+        resultado.append(vals)
+    return resultado
+
+
+@router.post("", response_model=CompraOut,
+             dependencies=[limite_por_minuto("compra", settings.RATE_LIMIT_CHECKOUT_PER_MINUTE)])
 async def confirmar_compra(
     compra: CompraIn,
     sede: SedeRequerida,
     idempotency_key: IdempotencyKey,
     request_id: RequestId,
+    cliente: ClienteOpcional,
 ):
     """
     Checkout Orchestration adhering to Rules 1, 2, 3 and 5:
@@ -81,7 +102,8 @@ async def confirmar_compra(
 
     odoo_order_vals = {
         "sede_code": sede,
-        "lines": [{"sku": l.sku, "qty": l.cantidad, "price_unit": l.precio_unitario} for l in compra.lineas],
+        "partner_id": cliente,
+        "lines": await _lineas_para_odoo(sede, compra.lineas),
         "coupon_code": compra.cupon_codigo,
         "delivery_slot_id": compra.franja_id,
         "delivery_address_id": compra.direccion_id,

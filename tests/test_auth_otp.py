@@ -97,6 +97,10 @@ class FakeRedis:
     async def hgetall(self, key):
         return dict(self.hashes.get(key, {})) if self._alive(key) else {}
 
+    async def hdel(self, key, *fields):
+        bucket = self.hashes.get(key, {})
+        return sum(1 for f in fields if bucket.pop(f, None) is not None)
+
     # -- sets --
     async def sadd(self, key, *members):
         self._alive(key)
