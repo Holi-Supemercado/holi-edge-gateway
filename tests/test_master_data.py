@@ -72,6 +72,15 @@ class FakeOdooMaster:
         self._guard("document-types")
         return {"tipos_documento": self.tipos}
 
+    async def fetch_stores(self, request_id):
+        self._guard("stores")
+        return {"tiendas": [
+            {"sede": "CHACH", "nombre": "Holi - Chacarilla", "direccion": "Av. Primavera 805",
+             "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True},
+            {"sede": "SURCO", "nombre": "Holi - Surco", "direccion": "", "distrito": "",
+             "latitud": 0.0, "longitud": 0.0, "por_defecto": False},
+        ]}
+
     async def fetch_coverage_zones(self, request_id):
         self._guard("coverage-zones")
         return {"zonas": self.zonas, "mensaje_sin_cobertura": self.mensaje_sin_cobertura}
@@ -363,3 +372,21 @@ async def test_las_zonas_se_cachean(entorno):
     for _ in range(3):
         await client.get("/v1/coverage", params={"lat": -12.115, "lng": -77.035})
     assert odoo.calls == ["coverage-zones"]
+
+
+# --------------------------------------------------------------------------- #
+# Store list
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_listado_de_tiendas_llega_intacto_y_se_cachea(entorno):
+    client, _, odoo = entorno
+    res = await client.get("/v1/stores")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert items[0] == {"sede": "CHACH", "nombre": "Holi - Chacarilla", "direccion": "Av. Primavera 805",
+                        "distrito": "San Borja", "latitud": -12.1104, "longitud": -76.9928, "por_defecto": True}
+    assert items[1]["latitud"] is None, "a store without coordinates must not point to (0, 0)"
+
+    await client.get("/v1/stores")
+    assert odoo.calls.count("stores") == 1

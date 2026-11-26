@@ -213,6 +213,11 @@ class OdooClient:
         return await self._call_odoo("GET", "/api/ecommerce/internal/master/legal-documents",
                                      headers=headers)
 
+    async def fetch_stores(self, request_id: str) -> Dict[str, Any]:
+        """Every active store with its address."""
+        headers = {"X-Request-Id": request_id}
+        return await self._call_odoo("GET", "/api/ecommerce/internal/master/stores", headers=headers)
+
     async def fetch_coverage_zones(self, request_id: str) -> Dict[str, Any]:
         """Every delivery polygon at once; the Edge resolves points locally."""
         headers = {"X-Request-Id": request_id}

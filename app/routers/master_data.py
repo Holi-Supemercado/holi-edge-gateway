@@ -20,7 +20,9 @@ from ..schemas.master_data import (
     MensajesInicioOut,
     ProvinciasOut,
     TiendaCobertura,
+    Tienda,
     TiendaPorDefectoOut,
+    TiendasOut,
     TiposDocumentoOut,
 )
 
@@ -199,6 +201,32 @@ async def resolver_cobertura(
 # --------------------------------------------------------------------------- #
 # Default store
 # --------------------------------------------------------------------------- #
+
+@router.get("/stores", response_model=TiendasOut)
+async def listar_tiendas(request_id: RequestId):
+    """
+    Every active store with its address. The shopping agent answers "which
+    stores do you have" from here; the app picks the store by address instead.
+    Cached like the delivery zones: closing a store has to show in minutes.
+    """
+    data = await _cached(
+        "md:stores",
+        settings.COVERAGE_ZONES_TTL_SECONDS,
+        lambda: odoo_client.fetch_stores(request_id),
+    )
+    return TiendasOut(items=[
+        Tienda(
+            sede=t["sede"],
+            nombre=t.get("nombre") or t["sede"],
+            direccion=t.get("direccion") or "",
+            distrito=t.get("distrito") or "",
+            latitud=t.get("latitud") or None,
+            longitud=t.get("longitud") or None,
+            por_defecto=bool(t.get("por_defecto")),
+        )
+        for t in data.get("tiendas", [])
+    ])
+
 
 @router.get("/stores/default", response_model=TiendaPorDefectoOut)
 async def sede_por_defecto():

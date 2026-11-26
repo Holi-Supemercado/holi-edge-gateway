@@ -82,6 +82,20 @@ class TiendaPorDefectoOut(BaseModel):
     nombre: str
 
 
+class Tienda(BaseModel):
+    sede: str = Field(description="Código de sede para la cabecera X-Holi-Sede")
+    nombre: str
+    direccion: str
+    distrito: str
+    latitud: Optional[float] = Field(default=None, description="Nulo si la tienda no tiene coordenadas cargadas")
+    longitud: Optional[float] = None
+    por_defecto: bool = Field(description="true para la sede que el Edge usa cuando falta X-Holi-Sede")
+
+
+class TiendasOut(Lista[Tienda]):
+    pass
+
+
 class TiendaCobertura(BaseModel):
     sede: str = Field(description="Código de sede para la cabecera X-Holi-Sede")
     nombre: str
