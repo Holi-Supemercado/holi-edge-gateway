@@ -58,6 +58,9 @@ class FakeRedis:
             self.expiries[key] = time.time() + ex
         return True
 
+    async def exists(self, *keys):
+        return sum(1 for k in keys if self._alive(k) and (k in self.values or k in self.hashes or k in self.sets))
+
     async def incr(self, key):
         self._alive(key)
         current = int(self.values.get(key, 0)) + 1

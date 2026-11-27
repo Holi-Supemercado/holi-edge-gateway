@@ -52,10 +52,46 @@ async def test_sin_cabecera_usa_la_sede_por_defecto(entorno):
 async def test_la_cabecera_manda_sobre_la_sede_por_defecto(entorno):
     client, redis = entorno
     _marcar(redis)
+    redis.values["v:cat:AQP01"] = "4"
 
     res = await client.get("/v1/catalog", headers={"X-Holi-Sede": "aqp01"})
     assert res.status_code == 200
     assert res.json()["sede"] == "AQP01"
+    assert res.headers["X-Holi-Sede"] == "AQP01"
+
+
+@pytest.mark.asyncio
+async def test_una_sede_no_publicada_responde_con_la_sede_por_defecto(entorno):
+    """An old pick saved on the phone must not answer empty lists without a word."""
+    client, redis = entorno
+    _marcar(redis)
+
+    res = await client.get("/v1/catalog", headers={"X-Holi-Sede": "SURQ"})
+    assert res.status_code == 200
+    assert res.json()["sede"] == "LIM01"
+    assert res.headers["X-Holi-Sede"] == "LIM01"
+
+
+@pytest.mark.asyncio
+async def test_sede_no_publicada_sin_sede_por_defecto_se_mantiene(entorno):
+    client, _ = entorno
+
+    res = await client.get("/v1/catalog", headers={"X-Holi-Sede": "SURQ"})
+    assert res.status_code == 200
+    assert res.headers["X-Holi-Sede"] == "SURQ"
+
+
+@pytest.mark.asyncio
+async def test_si_no_se_puede_comprobar_la_sede_no_se_cambia(entorno, monkeypatch):
+    """A Redis hiccup never moves a customer to another store."""
+    client, redis = entorno
+    _marcar(redis)
+
+    async def falla(*keys):
+        raise ConnectionError("holi-cache is down")
+    monkeypatch.setattr(redis, "exists", falla)
+
+    res = await client.get("/v1/catalog", headers={"X-Holi-Sede": "AQP01"})
     assert res.headers["X-Holi-Sede"] == "AQP01"
 
 

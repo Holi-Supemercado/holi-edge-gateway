@@ -16,7 +16,7 @@ from ..clients.redis_client import get_state_redis
 from .agente import verificar_token_agente
 from .errors import ApiError
 from .limits import check_rate_limit
-from .sede import leer_sede_por_defecto
+from .sede import leer_sede_por_defecto, sede_publicada
 from .security import SecurityError, verify_access_token
 
 _logger = logging.getLogger(__name__)
@@ -32,6 +32,14 @@ async def _sede_requerida(
     whose prices it is showing.
     """
     sede = (x_holi_sede or "").strip().upper()
+    if sede and not await sede_publicada(sede):
+        # A store Odoo never published (an old pick saved on the phone, a typo)
+        # would answer empty lists with no error: the default store instead, and
+        # the echoed header tells the app to drop its stale pick.
+        por_defecto = await leer_sede_por_defecto()
+        if por_defecto and por_defecto["sede"] != sede:
+            _logger.warning("Store %s is not published: answering for the default store %s", sede, por_defecto["sede"])
+            sede = por_defecto["sede"]
     if not sede:
         por_defecto = await leer_sede_por_defecto()
         if not por_defecto:

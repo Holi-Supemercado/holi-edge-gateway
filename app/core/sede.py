@@ -23,6 +23,19 @@ class SedePorDefecto(TypedDict):
     nombre: str
 
 
+async def sede_publicada(sede: str) -> bool:
+    """
+    Whether Odoo published this store: its catalog version key exists (Odoo
+    checks the same key before an incremental sync). Unreadable counts as
+    published, so a Redis hiccup never moves a customer to another store.
+    """
+    try:
+        return bool(await get_cache_redis().exists(f"v:cat:{sede}"))
+    except Exception as e:
+        _logger.warning("Could not check whether store %s is published: %s", sede, e)
+        return True
+
+
 async def leer_sede_por_defecto() -> Optional[SedePorDefecto]:
     """
     The default store, or None when Odoo has none marked.
