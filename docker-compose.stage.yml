@@ -1,0 +1,28 @@
+# Edge en Docker en esta PC contra los servicios de STAGING (Odoo.sh de staging, Redis Cloud y
+# Meilisearch de staging). Sirve para probar la app y agent-api con datos reales sin desplegar el Edge.
+#
+#   1. Copiar .env.example a .env.stage y completar (nunca va al repo: .gitignore lo excluye):
+#        ODOO_BASE_URL=https://holisupermercado-wms-ecommerce-41064138.dev.odoo.com
+#        ODOO_HMAC_SECRET=<el mismo de Ajustes → Holi E-commerce en el Odoo de staging>
+#        REDIS_CACHE_URL=rediss://default:<clave>@<host de staging>:<puerto>/0   (holi-cache de staging)
+#        REDIS_STATE_URL=redis://host.docker.internal:6379/1   (carritos y sesiones en el Redis local)
+#        MEILI_URL=https://ms-11795afa32c2-53877.nyc.meilisearch.io
+#        MEILI_KEY=<llave de búsqueda de ese Meilisearch>
+#        JWT_SECRET_KEY=<cualquier valor largo para local>
+#   2. docker compose -f docker-compose.local.yml down   (libera el puerto 8080)
+#   3. docker compose -f docker-compose.stage.yml up -d --build
+#   4. Comprobar: curl localhost:8080/v1/stores/default  y  curl "localhost:8080/v1/search?q=leche"
+#
+# A diferencia de docker-compose.local.yml, aquí no se reemplaza ninguna URL: todo sale de .env.stage.
+services:
+  edge:
+    build: .
+    image: holi-edge-gateway:local
+    env_file: .env.stage
+    environment:
+      ENVIRONMENT: development
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

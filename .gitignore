@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 env/
 .env
+# Entornos con credenciales (.env.stage, .env.prod…): nunca al repo; solo el ejemplo.
+.env.*
+!.env.example
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
