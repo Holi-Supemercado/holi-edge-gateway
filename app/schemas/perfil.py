@@ -85,3 +85,50 @@ class Direccion(BaseModel):
 
 class DireccionesOut(Lista[Direccion]):
     pass
+
+
+# --------------------------------------------------------------------------- #
+# Profile
+# --------------------------------------------------------------------------- #
+
+class PerfilOut(BaseModel):
+    nombre: str
+    correo: str
+    correo_verificado: bool
+    telefono: str = Field(description="Nueve dígitos, sin +51")
+    telefono_verificado: bool
+    tipo_documento_id: Optional[int] = None
+    tipo_documento: str
+    numero_documento: str
+    estado_validacion: str = Field(description="validado · pendiente · rechazado · vacío")
+    nombre_bloqueado: bool = Field(description="true si RENIEC validó el nombre: no se puede cambiar")
+
+
+class PerfilCambios(BaseModel):
+    """Only the fields that come are changed. The phone changes with its own code: /me/phone/otp."""
+    nombre: Optional[str] = Field(None, min_length=2, max_length=120)
+    correo: Optional[str] = Field(None, max_length=254)
+
+    @field_validator("correo")
+    @classmethod
+    def _correo_valido(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+            raise ValueError("Ingresa un correo válido.")
+        return v
+
+
+class TelefonoIn(BaseModel):
+    telefono: str = Field(description="Celular de 9 dígitos que empieza con 9; acepta +51 y espacios")
+
+    @field_validator("telefono")
+    @classmethod
+    def _telefono_valido(cls, v: str) -> str:
+        v = re.sub(r"\D", "", v or "")
+        if v.startswith("51") and len(v) == 11:
+            v = v[2:]
+        if not re.fullmatch(r"9\d{8}", v):
+            raise ValueError("Ingresa un celular de 9 dígitos que empiece con 9.")
+        return v

@@ -58,6 +58,7 @@ CATALOGO: Dict[str, Tuple[int, str, str]] = {
                          "Ya existe una cuenta con estos datos. Recupera tu acceso en lugar de crear una nueva."),
     "registro-ya-completado": (409, "Registro ya completado", "Esta solicitud ya fue completada."),
     "correo-ya-verificado": (409, "Correo ya verificado", "Tu correo ya está verificado."),
+    "nombre-validado": (409, "Nombre validado", "Tu nombre está validado con RENIEC y no se puede cambiar."),
     "stock-insuficiente": (409, "Stock insuficiente", "Algunas líneas no tienen stock disponible."),
     "cupon-no-valido": (409, "Cupón no válido", "El cupón no es válido para esta compra."),
     "franja-agotada": (409, "Franja agotada", "La franja de entrega elegida ya no tiene cupo."),

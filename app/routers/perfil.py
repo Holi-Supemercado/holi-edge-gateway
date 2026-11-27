@@ -24,9 +24,9 @@ from ..schemas.auth import OtpEnviarOut
 from ..schemas.common import MensajeOut
 from ..schemas.perfil import (
     CoberturaDireccion, CorreoVerificadoOut, CorreoVerificarIn, Direccion, DireccionCambios, DireccionesOut,
-    DireccionIn,
+    DireccionIn, PerfilCambios, PerfilOut, TelefonoIn,
 )
-from .auth import primer_nombre
+from .auth import _e164_peru, primer_nombre
 from .master_data import cobertura_de
 
 _logger = logging.getLogger(__name__)
@@ -189,3 +189,105 @@ async def eliminar_direccion(direccion_id: int, cliente_id: ClienteId, request_i
     """Removes the address from the list; past orders keep it. If it was the default, another takes its place."""
     await odoo_client.customer_delete_address(cliente_id, direccion_id, request_id)
     return MensajeOut(mensaje="Dirección eliminada.")
+
+
+# --------------------------------------------------------------------------- #
+# Profile. The name validated with RENIEC is locked; changing the e-mail leaves
+# it unverified (it is also the login); the phone changes only with a code
+# sent to the new number, through the same guard as every other code.
+# --------------------------------------------------------------------------- #
+
+def _perfil(p: Dict[str, Any]) -> PerfilOut:
+    return PerfilOut(
+        nombre=p.get("name", ""), correo=p.get("email", ""), correo_verificado=bool(p.get("email_verified")),
+        telefono=p.get("phone", ""), telefono_verificado=bool(p.get("phone_verified")),
+        tipo_documento_id=p.get("document_type_id"), tipo_documento=p.get("document_type", ""),
+        numero_documento=p.get("document_number", ""), estado_validacion=p.get("validation_state", ""),
+        nombre_bloqueado=bool(p.get("name_locked")),
+    )
+
+
+@router.get("", response_model=PerfilOut)
+async def ver_perfil(cliente_id: ClienteId, request_id: RequestId):
+    """The customer's data as Odoo has it now, with what is verified and what cannot change."""
+    return _perfil((await odoo_client.customer_profile(cliente_id, request_id))["profile"])
+
+
+@router.patch("", response_model=PerfilOut)
+async def actualizar_perfil(cambios: PerfilCambios, cliente_id: ClienteId, request_id: RequestId):
+    """
+    Changes the name and/or e-mail sent. A name validated with RENIEC is 409
+    nombre-validado; an e-mail of another account, 409 cuenta-ya-existe. A new
+    e-mail is unverified and is the one to log in with from now on.
+    """
+    campos = {k: v for k, v in {"name": cambios.nombre, "email": cambios.correo}.items() if v is not None}
+    return _perfil((await odoo_client.customer_update_profile(cliente_id, campos, request_id))["profile"])
+
+
+def _clave_telefono(cliente_id: int) -> str:
+    return f"telefono-{cliente_id}"
+
+
+def _sesion_telefono(cliente_id: int) -> str:
+    return f"otp:telefono:{cliente_id}"
+
+
+@router.post("/phone/otp/send", response_model=OtpEnviarOut)
+async def enviar_codigo_telefono(payload: TelefonoIn, cliente_id: ClienteId, request: Request, request_id: RequestId):
+    """Sends an SMS code to the NEW phone; Odoo first confirms it is valid and no other account has it."""
+    telefono = (await odoo_client.customer_check_phone(cliente_id, payload.telefono, request_id))["phone"]
+    destino = _e164_peru(telefono)
+    state_redis = get_state_redis()
+    clave = _clave_telefono(cliente_id)
+
+    veredicto = await check_send_allowed(state_redis, destino, ip_del_cliente(request), clave)
+    if not veredicto.allowed:
+        raise send_refusal(veredicto)
+
+    reintento = await start_cooldown(state_redis, clave)
+    resultado = await get_otp_provider().send(destino, "sms", settings.TWILIO_LOCALE)
+
+    # The number is pinned: the check goes to the number that received the code.
+    await state_redis.hset(_sesion_telefono(cliente_id),
+                           mapping={"sid": resultado.sid, "destino": destino, "telefono": telefono})
+    await state_redis.expire(_sesion_telefono(cliente_id), settings.OTP_SESSION_TTL_SECONDS)
+    await state_redis.delete(f"otp:try:{clave}")
+
+    return OtpEnviarOut(
+        enviado=True,
+        canal="sms",
+        destino_enmascarado=mask_destination(destino, "sms"),
+        reintento_en=reintento,
+        expira_en=settings.OTP_SESSION_TTL_SECONDS,
+    )
+
+
+@router.post("/phone/otp/verify", response_model=PerfilOut)
+async def verificar_codigo_telefono(payload: CorreoVerificarIn, cliente_id: ClienteId, request_id: RequestId):
+    """Spends one attempt against Twilio's verdict; on success the new phone becomes the customer's, verified."""
+    state_redis = get_state_redis()
+    clave = _clave_telefono(cliente_id)
+
+    intento = await register_check_attempt(state_redis, clave)
+    if not intento.allowed:
+        if intento.reason == "estado_no_disponible":
+            raise ApiError("servicio-no-disponible", "No podemos verificar el código en este momento.")
+        await state_redis.delete(_sesion_telefono(cliente_id))
+        raise ApiError("intentos-agotados", "Demasiados intentos fallidos. Solicita un código nuevo.")
+
+    sesion = await state_redis.hgetall(_sesion_telefono(cliente_id))
+    destino, telefono = (sesion or {}).get("destino"), (sesion or {}).get("telefono")
+    if not destino or not telefono:
+        raise ApiError("codigo-expirado")
+
+    resultado = await get_otp_provider().check(destino, payload.codigo)
+    if not resultado.approved:
+        raise ApiError("codigo-expirado" if resultado.status == "expired" else "codigo-incorrecto")
+
+    try:
+        perfil = (await odoo_client.customer_set_phone(cliente_id, telefono, "sms", request_id))["profile"]
+    finally:
+        # Used or refused (another account took the number meanwhile): the code is spent either way.
+        await state_redis.delete(_sesion_telefono(cliente_id), f"otp:try:{clave}")
+    _logger.info("Phone changed for partner %s (%s)", cliente_id, request_id)
+    return _perfil(perfil)

@@ -261,3 +261,26 @@ class OdooClient:
         return await self._call_odoo("POST", "/api/ecommerce/internal/customer/orders/detail",
                                      data={"partner_id": partner_id, "order_id": order_id},
                                      headers={"X-Request-Id": request_id})
+
+    # --- The customer's profile (name, e-mail and phone the app lets them change) ---
+
+    async def customer_profile(self, partner_id: int, request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/profile",
+                                     data={"partner_id": partner_id}, headers={"X-Request-Id": request_id})
+
+    async def customer_update_profile(self, partner_id: int, profile: Dict[str, Any], request_id: str) -> Dict[str, Any]:
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/profile/update",
+                                     data={"partner_id": partner_id, "profile": profile},
+                                     headers={"X-Request-Id": request_id})
+
+    async def customer_check_phone(self, partner_id: int, phone: str, request_id: str) -> Dict[str, Any]:
+        """Valid and free for this customer; Odoo answers the nine national digits."""
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/phone/check",
+                                     data={"partner_id": partner_id, "phone": phone},
+                                     headers={"X-Request-Id": request_id})
+
+    async def customer_set_phone(self, partner_id: int, phone: str, channel: str, request_id: str) -> Dict[str, Any]:
+        """Only after the Edge proved the phone with a one-time code."""
+        return await self._call_odoo("POST", "/api/ecommerce/internal/customer/phone/set",
+                                     data={"partner_id": partner_id, "phone": phone, "channel": channel},
+                                     headers={"X-Request-Id": request_id})
